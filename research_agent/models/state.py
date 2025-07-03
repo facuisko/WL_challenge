@@ -11,6 +11,8 @@ class ResearchState(TypedDict):
     # Esquema de investigación propuesto
     proposed_outline: str
     outline_approved: bool
+    outline_items: List[str]  # NUEVO: Items parseados del outline
+    user_feedback: str        # NUEVO: Feedback específico del usuario
     
     # Control de flujo
     current_agent: str

@@ -10,41 +10,73 @@ class InvestigatorAgent(BaseAgent):
     
     def __init__(self):
         super().__init__("Investigador")
-        self.openai_client = OpenAIClient()
+        self._openai_client = None
+    
+    @property
+    def openai_client(self):
+        """Lazy loading del cliente OpenAI"""
+        if self._openai_client is None:
+            self._openai_client = OpenAIClient()
+        return self._openai_client
     
     def generate_research_outline(self, state: ResearchState) -> ResearchState:
-        """Genera un esquema de investigación estructurado"""
+        """Genera un esquema de investigación con 6 opciones simples"""
         user_query = state['user_query']
+        user_feedback = state.get('user_feedback', '')
+        existing_items = state.get('outline_items', [])
         
         self.log(f"Analizando consulta: '{user_query}'")
-        self.log("Generando esquema de investigación...")
         
-        # Prompt para generar esquema
-        prompt = f"""
-        Como experto investigador, analiza esta consulta y crea un esquema detallado de investigación:
+        if user_feedback:
+            self.log(f"Aplicando feedback del usuario: {user_feedback}")
         
-        CONSULTA: {user_query}
-        
-        Genera un esquema estructurado que incluya:
-        1. Aspectos principales a investigar (3-5 temas)
-        2. Subtemas específicos para cada aspecto
-        3. Fuentes sugeridas de información
-        4. Preguntas clave a responder
-        
-        Formato de respuesta:
-        ## ESQUEMA DE INVESTIGACIÓN
-        
-        ### 1. [Aspecto Principal 1]
-        - Subtema A
-        - Subtema B
-        - Fuentes: [tipos de fuentes]
-        - Preguntas clave: [2-3 preguntas]
-        
-        ### 2. [Aspecto Principal 2]
-        ...
-        
-        Sé específico y enfócate en información actual y relevante.
-        """
+        # Prompt simplificado para 6 opciones sin subtemas
+        if user_feedback and existing_items:
+            prompt = f"""
+            El usuario ha dado feedback sobre el esquema anterior. Genera un nuevo esquema incorporando sus cambios:
+            
+            CONSULTA ORIGINAL: {user_query}
+            FEEDBACK DEL USUARIO: {user_feedback}
+            ELEMENTOS ACTUALES: {existing_items}
+            
+            Genera exactamente 6 elementos principales de investigación (sin subtemas).
+            Si hay elementos aprobados por el usuario, inclúyelos y completa hasta 6 elementos.
+            Si hay más de 6 elementos aprobados, selecciona los 6 más relevantes.
+            
+            Formato de respuesta:
+            ## ESQUEMA DE INVESTIGACIÓN
+            
+            ### 1. [Elemento 1]
+            ### 2. [Elemento 2]
+            ### 3. [Elemento 3]
+            ### 4. [Elemento 4]
+            ### 5. [Elemento 5]
+            ### 6. [Elemento 6]
+            
+            Solo títulos principales, sin subtemas ni detalles adicionales.
+            """
+        else:
+            prompt = f"""
+            Como experto investigador, crea un esquema de investigación para:
+            
+            CONSULTA: {user_query}
+            
+            Genera exactamente 6 elementos principales de investigación (sin subtemas).
+            Cada elemento debe ser un aspecto importante y específico del tema.
+            
+            Formato de respuesta:
+            ## ESQUEMA DE INVESTIGACIÓN
+            
+            ### 1. [Elemento 1]
+            ### 2. [Elemento 2]
+            ### 3. [Elemento 3]
+            ### 4. [Elemento 4]
+            ### 5. [Elemento 5]
+            ### 6. [Elemento 6]
+            
+            Solo títulos principales, sin subtemas ni detalles adicionales.
+            Sé específico y enfócate en información actual y relevante.
+            """
         
         try:
             outline = self.openai_client.generate_response(prompt)
@@ -53,7 +85,8 @@ class InvestigatorAgent(BaseAgent):
             return {
                 **state,
                 "current_agent": self.name,
-                "proposed_outline": outline
+                "proposed_outline": outline,
+                "user_feedback": "",
             }
             
         except Exception as e:
@@ -63,7 +96,8 @@ class InvestigatorAgent(BaseAgent):
             return {
                 **state,
                 "current_agent": self.name,
-                "proposed_outline": fallback_outline
+                "proposed_outline": fallback_outline,
+                "user_feedback": "",
             }
     
     def conduct_detailed_research(self, state: ResearchState) -> ResearchState:
@@ -115,21 +149,12 @@ class InvestigatorAgent(BaseAgent):
         return f"""
         ## ESQUEMA DE INVESTIGACIÓN (Versión Básica)
         
-        ### 1. Introducción y Contexto
-        - Definiciones clave relacionadas con: {query}
-        - Contexto actual del tema
-        
-        ### 2. Aspectos Técnicos
-        - Desarrollos recientes
-        - Tecnologías involucradas
-        
-        ### 3. Aplicaciones Prácticas
-        - Casos de uso actuales
-        - Ejemplos de implementación
-        
-        ### 4. Tendencias y Futuro
-        - Proyecciones
-        - Desafíos y oportunidades
+        ### 1. Introducción y Contexto de {query}
+        ### 2. Aspectos Técnicos y Tecnológicos
+        ### 3. Aplicaciones Prácticas y Casos de Uso
+        ### 4. Tendencias Actuales y Desarrollos Recientes
+        ### 5. Desafíos y Limitaciones
+        ### 6. Futuro y Proyecciones
         """
     
     def execute(self, state: ResearchState) -> ResearchState:

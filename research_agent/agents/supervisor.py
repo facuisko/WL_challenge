@@ -72,8 +72,8 @@ class SupervisorAgent(BaseAgent):
         if state.get('analysis_complete'):
             return "CONTENT_CURATED"
         
-        # Si el esquema está aprobado Y hay outline_items, listo para curación
-        if state.get('outline_approved') and state.get('outline_items'):
+        # Si el esquema está aprobado (con o sin outline_items), listo para curación
+        if state.get('outline_approved'):
             return "OUTLINE_APPROVED"
         
         # Si hay esquema propuesto pero no aprobado

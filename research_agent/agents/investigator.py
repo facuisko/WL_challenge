@@ -1,6 +1,10 @@
 """
 Agente investigador que usa OpenAI para estructurar y realizar investigación
 """
+from typing import Dict, Any, List
+import requests
+import urllib.parse
+import re
 from research_agent.agents.base_agent import BaseAgent
 from research_agent.models.state import ResearchState
 from research_agent.models.agentic_state import AgenticResearchState
@@ -22,42 +26,36 @@ class InvestigatorAgent(BaseAgent):
     
     def generate_research_outline(self, state: AgenticResearchState) -> AgenticResearchState:
         """
-        Genera esquema de investigación basado en fuentes reales encontradas
+        Genera esquema de investigación con títulos lógicos
         Cumple con el challenge: 'Finds and gathers initial information about your topic'
         """
         user_query = state['user_query']
         user_feedback = state.get('user_feedback', '')
         existing_items = state.get('outline_items', [])
         
-        self.log(f"🔍 Investigando fuentes para: '{user_query}'")
-        
-        # PASO 1: Realizar búsqueda de fuentes reales (como pide el challenge)
-        search_results = self._find_real_sources(user_query)
-        
-        # PASO 2: Generar summaries de las fuentes encontradas (como pide el challenge)
-        source_summaries = self._generate_source_summaries(search_results, user_query)
+        self.log(f"📋 Generando títulos lógicos para: '{user_query}'")
         
         if user_feedback:
             self.log(f"Aplicando feedback del usuario: {user_feedback}")
         
-        # PASO 3: Crear esquema basado en fuentes reales encontradas
+        # Crear esquema con títulos lógicos (sin links)
         if user_feedback and existing_items:
-            outline = self._create_outline_from_feedback(user_query, user_feedback, existing_items, source_summaries)
+            outline = self._create_outline_from_feedback(user_query, user_feedback, existing_items)
         else:
-            outline = self._create_outline_from_sources(user_query, source_summaries)
+            outline = self._create_logical_outline(user_query)
         
-        self.log("✅ Esquema de investigación generado basado en fuentes reales")
+        self.log("✅ Esquema de títulos lógicos generado")
         
         return {
             **state,
             "current_agent": self.name,
             "proposed_outline": outline,
+            "outline_approved": False,  # Explícitamente marcar como no aprobado
             "user_feedback": "",
             "research_context": {
                 **state.get("research_context", {}),
-                "initial_sources": search_results,
-                "source_summaries": source_summaries,
-                "sources_found": len(search_results.get("verified_sources", []))
+                "topic_analyzed": user_query,
+                "outline_method": "logical_titles"
             }
         }
     
@@ -133,6 +131,41 @@ class InvestigatorAgent(BaseAgent):
         
         return summaries
     
+    def _create_logical_outline(self, query: str) -> str:
+        """
+        Crea esquema con títulos lógicos y estructurados para el tema
+        """
+        outline_prompt = f"""
+        Crea un esquema de investigación con títulos lógicos y bien estructurados para: "{query}"
+        
+        INSTRUCCIONES:
+        1. Genera exactamente 6 títulos principales
+        2. Los títulos deben ser específicos y relevantes al tema
+        3. Deben cubrir los aspectos más importantes del tema
+        4. Organiza de manera lógica (general a específico, cronológico, etc.)
+        5. Usa un enfoque académico y profesional
+        6. NO incluyas links, URLs o referencias específicas
+        7. Solo títulos descriptivos y claros
+        
+        FORMATO DE RESPUESTA:
+        ## ESQUEMA DE INVESTIGACIÓN
+        
+        ### 1. [Título descriptivo y específico]
+        ### 2. [Título descriptivo y específico]  
+        ### 3. [Título descriptivo y específico]
+        ### 4. [Título descriptivo y específico]
+        ### 5. [Título descriptivo y específico]
+        ### 6. [Título descriptivo y específico]
+        
+        Solo títulos principales, sin subtemas ni explicaciones adicionales.
+        """
+        
+        try:
+            return self.openai_client.generate_response(outline_prompt, task_type="outline")
+        except Exception as e:
+            self.log(f"❌ Error creando esquema lógico: {e}")
+            return self._generate_fallback_outline(query)
+    
     def _create_outline_from_sources(self, query: str, source_summaries: List[Dict[str, str]]) -> str:
         """
         Crea esquema de investigación basado en las fuentes reales encontradas
@@ -175,29 +208,27 @@ class InvestigatorAgent(BaseAgent):
             self.log(f"❌ Error creando esquema de fuentes: {e}")
             return self._generate_fallback_outline(query)
     
-    def _create_outline_from_feedback(self, query: str, feedback: str, existing_items: List[str], 
-                                    source_summaries: List[Dict[str, str]]) -> str:
+    def _create_outline_from_feedback(self, query: str, feedback: str, existing_items: List[str]) -> str:
         """
-        Crea esquema incorporando feedback del usuario y fuentes encontradas
+        Crea esquema incorporando feedback del usuario
         """
-        sources_context = ""
-        if source_summaries:
-            sources_context = "\nFUENTES DISPONIBLES:\n"
-            for summary in source_summaries[:3]:  # Top 3 fuentes
-                sources_context += f"- {summary['source_title']}: {summary['summary'][:100]}...\n"
-        
         feedback_prompt = f"""
-        Incorpora el feedback del usuario y usa las fuentes reales encontradas:
+        Incorpora el feedback del usuario para mejorar el esquema de títulos:
         
         CONSULTA ORIGINAL: {query}
         FEEDBACK DEL USUARIO: {feedback}
         ELEMENTOS ACTUALES: {existing_items}
-        {sources_context}
         
         Genera un esquema mejorado que:
         1. Incorpore el feedback específico del usuario
-        2. Use información de las fuentes reales encontradas
+        2. Mejore la estructura y lógica de los títulos
         3. Mantenga exactamente 6 elementos
+        4. Sea más específico y relevante al tema
+        
+        INSTRUCCIONES:
+        - NO incluyas links, URLs o referencias específicas
+        - Solo títulos descriptivos y claros
+        - Enfoque académico y profesional
         
         Formato de respuesta:
         ## ESQUEMA DE INVESTIGACIÓN
@@ -283,3 +314,5 @@ class InvestigatorAgent(BaseAgent):
             return self.conduct_detailed_research(state)
         else:
             return state 
+    
+    

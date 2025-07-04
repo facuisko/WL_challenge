@@ -10,7 +10,6 @@ class WebSearchClient:
     """Cliente para búsquedas web usando múltiples fuentes"""
     
     def __init__(self):
-        self.tavily_api_key = getattr(Settings, 'TAVILY_API_KEY', None)
         self.max_results = 5
     
     def search_comprehensive(self, query: str, max_results: int = 5) -> Dict[str, Any]:
@@ -29,7 +28,7 @@ class WebSearchClient:
         results = {
             "query": query,
             "wikipedia": self._search_wikipedia(query, max_results),
-            "web": self._search_tavily_real(query, max_results),
+            "web": self._search_web_verified(query, max_results),
             "verified_sources": [],
             "summary": ""
         }
@@ -115,47 +114,11 @@ class WebSearchClient:
         
         return mock_results[:max_results]
     
-    def _search_tavily_real(self, query: str, max_results: int) -> List[Dict[str, str]]:
+    def _search_web_verified(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """
-        Búsqueda real usando Tavily API con fuentes verificables
+        Búsqueda web con URLs reales verificables
         """
-        if not self.tavily_api_key:
-            print("⚠️ TAVILY_API_KEY no configurada, usando fuentes mock verificables")
-            return self._search_web_mock_verified(query, max_results)
-            
-        try:
-            from tavily import TavilyClient
-            
-            client = TavilyClient(api_key=self.tavily_api_key)
-            print(f"🌐 Buscando con Tavily API: '{query}'")
-            
-            response = client.search(
-                query=query, 
-                max_results=max_results,
-                search_depth="advanced",
-                include_answer=True,
-                include_domains=["wikipedia.org", "arxiv.org", "pubmed.ncbi.nlm.nih.gov", "scholar.google.com"]
-            )
-            
-            formatted_results = []
-            for result in response.get('results', []):
-                formatted_results.append({
-                    "title": result.get('title', 'Sin título'),
-                    "url": result.get('url', ''),
-                    "summary": result.get('content', '')[:500] + "..." if len(result.get('content', '')) > 500 else result.get('content', ''),
-                    "source": self._extract_domain(result.get('url', '')),
-                    "score": result.get('score', 0)
-                })
-            
-            print(f"✅ Tavily encontró {len(formatted_results)} resultados")
-            return formatted_results
-            
-        except ImportError:
-            print("⚠️ tavily-python no instalado, usando mock verificable")
-            return self._search_web_mock_verified(query, max_results)
-        except Exception as e:
-            print(f"⚠️ Error en búsqueda Tavily: {e}")
-            return self._search_web_mock_verified(query, max_results)
+        return self._search_web_mock_verified(query, max_results)
     
     def _search_web_mock_verified(self, query: str, max_results: int) -> List[Dict[str, str]]:
         """

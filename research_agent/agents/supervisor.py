@@ -2,6 +2,7 @@
 Agente supervisor que coordina el workflow completo multi-agente
 """
 import re
+from typing import List, Dict
 from research_agent.agents.base_agent import BaseAgent
 from research_agent.models.agentic_state import AgenticResearchState
 
@@ -33,11 +34,11 @@ class SupervisorAgent(BaseAgent):
         if current_stage == "OUTLINE_PENDING":
             return self._interact_with_user(state)
         
-        # Etapa 4: Curación profunda del contenido aprobado
+        # Etapa 4: Curación directa con fuentes reales integradas
         if current_stage == "OUTLINE_APPROVED":
             decision = "CURATE_CONTENT"
-            reasoning = "Esquema aprobado, iniciando curación profunda"
-            self.log("🔍 Enviando contenido aprobado al curador")
+            reasoning = "Esquema aprobado, iniciando curación con fuentes reales"
+            self.log("🔍 Enviando al curador para análisis con fuentes reales")
             return self._update_state_with_decision(state, decision, reasoning, step + 1)
         
         # Etapa 5: Generación del reporte final
@@ -71,8 +72,8 @@ class SupervisorAgent(BaseAgent):
         if state.get('analysis_complete'):
             return "CONTENT_CURATED"
         
-        # Si el esquema está aprobado, listo para curación
-        if state.get('outline_approved'):
+        # Si el esquema está aprobado Y hay outline_items, listo para curación
+        if state.get('outline_approved') and state.get('outline_items'):
             return "OUTLINE_APPROVED"
         
         # Si hay esquema propuesto pero no aprobado
@@ -164,6 +165,7 @@ class SupervisorAgent(BaseAgent):
         print("  • 'reject' - Rechazar todo y regenerar")
         print("  • 'reject 2, add \"new item\"' - Comando compuesto")
         print("  • 'modify 1 to \"new title\"' - Alias para change")
+        print("  • 'reformulate' - Cambiar completamente el tema de investigación")
         
         user_input = input("\n👤 Tu comando: ").strip()
         
@@ -184,7 +186,9 @@ class SupervisorAgent(BaseAgent):
                 **state, 
                 "outline_approved": True, 
                 "current_agent": self.name,
-                "outline_items": outline_items
+                "outline_items": outline_items,
+                "next_action": "",  # Limpiar acción anterior
+                "user_feedback": ""  # Limpiar feedback
             }
         
         elif command_lower.startswith('approve '):
@@ -214,6 +218,10 @@ class SupervisorAgent(BaseAgent):
                 "current_agent": self.name,
                 "user_feedback": "Regenerar esquema completo"
             }
+        
+        elif command_lower == 'reformulate':
+            # Reformular tema de investigación completamente
+            return self._reformulate_research_topic(state)
         
         else:
             print("❌ Comando no reconocido. Intenta de nuevo.")
@@ -475,4 +483,55 @@ class SupervisorAgent(BaseAgent):
             "next_action": "",  # Quedarse en supervisor
             "current_agent": self.name,
             "outline_items": current_items
-        } 
+        }
+    
+    def _reformulate_research_topic(self, state: AgenticResearchState) -> AgenticResearchState:
+        """Permite al usuario reformular completamente el tema de investigación"""
+        current_topic = state.get('user_query', 'tema no especificado')
+        
+        print(f"\n{'='*60}")
+        print("🔄 REFORMULACIÓN DEL TEMA DE INVESTIGACIÓN")
+        print(f"{'='*60}")
+        print(f"\n📋 Tema actual: '{current_topic}'")
+        print("\n💡 El sistema no parece haber entendido bien tu tema de investigación.")
+        print("📝 Por favor, reformula tu consulta de manera más específica.")
+        print("\n💡 Ejemplos de temas bien formulados:")
+        print("   • 'Aplicaciones de machine learning en diagnóstico médico por imágenes'")
+        print("   • 'Impacto de la inteligencia artificial en el sector financiero 2024'")
+        print("   • 'Tecnologías blockchain para supply chain management'")
+        print("   • 'Energías renovables: tecnologías emergentes y sostenibilidad'")
+        print("\n📋 Ingresa tu nuevo tema de investigación:")
+        
+        try:
+            new_topic = input("👤 Nuevo tema de investigación: ").strip()
+            
+            if not new_topic:
+                print("❌ Por favor, ingresa un tema válido.")
+                return self._reformulate_research_topic(state)
+            
+            self.log(f"🔄 Tema reformulado: '{current_topic}' → '{new_topic}'")
+            
+            # Reiniciar completamente el proceso con el nuevo tema
+            return {
+                "user_query": new_topic,
+                "current_agent": self.name,
+                "step_count": 0,
+                "current_research_topic": new_topic,
+                "research_context": {},
+                "agent_decisions": {},
+                "autonomous_actions": [],
+                "quality_assessments": {},
+                "inter_agent_messages": [],
+                "proposed_outline": "",
+                "outline_approved": False,
+                "outline_items": [],
+                "user_feedback": "",
+                "next_action": "GENERATE_OUTLINE"
+            }
+            
+        except EOFError:
+            print("❌ Error al leer entrada. Manteniendo tema actual.")
+            return self._interact_with_user(state)
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            return self._interact_with_user(state)

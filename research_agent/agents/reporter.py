@@ -1,14 +1,16 @@
 """
 Agente reportero que genera reportes finales estructurados
 """
+from typing import Dict, Any, List
 from research_agent.agents.base_agent import BaseAgent
 from research_agent.models.agentic_state import AgenticResearchState
 from research_agent.tools.openai_client import OpenAIClient
-from datetime import datetime
-from typing import Dict, Any
+import datetime
+import os
+import re
 
 class ReporterAgent(BaseAgent):
-    """Agente reportero que genera reportes finales profesionales"""
+    """Agente reportero que transforma contenido curado en reportes pulidos"""
     
     def __init__(self):
         super().__init__("Reportero")
@@ -22,7 +24,7 @@ class ReporterAgent(BaseAgent):
         return self._openai_client
     
     def execute(self, state: AgenticResearchState) -> AgenticResearchState:
-        """Ejecuta generación del reporte final"""
+        """Ejecuta la generación de reporte"""
         action = state.get('next_action')
         
         if action == "GENERATE_REPORT":
@@ -32,382 +34,525 @@ class ReporterAgent(BaseAgent):
     
     def generate_final_report(self, state: AgenticResearchState) -> AgenticResearchState:
         """
-        Genera un reporte final estructurado basado en todo el contenido curado
+        Genera reporte final pulido siguiendo exactamente el índice aprobado por el usuario
+        Cumple con: 'Transforms analyzed content into a polished final report'
         """
-        research_results = state.get('research_results', {})
-        research_context = state.get('research_context', {})
         user_query = state['user_query']
+        outline_items = state.get('outline_items', [])  # Esquema aprobado por usuario
+        analysis_complete = state.get('analysis_complete', {})
+        curated_content = analysis_complete.get('curated_sections', [])
+        synthesis = state.get('research_synthesis', '')
         
-        if not research_results:
-            self.log("❌ No hay contenido curado para generar reporte")
-            return {
-                **state,
-                "current_agent": self.name,
-                "final_report": "Error: No hay contenido para generar reporte"
-            }
+        self.log(f"📄 Generando reporte final para: '{user_query}'")
+        self.log(f"📋 Siguiendo esquema aprobado con {len(outline_items)} secciones")
+        self.log(f"📚 Contenido curado disponible: {len(curated_content)} secciones")
         
-        self.log("📄 Generando reporte final estructurado")
+        # Iniciar progreso del reporte
+        total_steps = 5
         
-        # Preparar datos para el reporte
-        report_data = self._prepare_report_data(research_results, research_context, user_query)
+        # Paso 1: Generar reporte estructurado siguiendo índice aprobado
+        self._show_progress(1, total_steps, "Generando reporte estructurado...")
+        final_report = self._create_structured_report_from_approved_outline(
+            user_query, 
+            outline_items,  # Esquema aprobado por usuario
+            curated_content, 
+            synthesis
+        )
         
-        # Generar cada sección del reporte
-        sections = self._generate_report_sections(report_data)
+        # Paso 2: Generar resumen ejecutivo
+        self._show_progress(2, total_steps, "Creando resumen ejecutivo...")
+        executive_summary = self._create_executive_summary(
+            user_query, 
+            curated_content, 
+            synthesis
+        )
         
-        # Ensamblar reporte final
-        final_report = self._assemble_final_report(sections, report_data)
+        # Paso 3: Información sobre el análisis realizado
+        self._show_progress(3, total_steps, "Compilando información del análisis...")
+        analysis_info = self._create_analysis_info_section(analysis_complete)
         
-        # Generar resumen ejecutivo
-        executive_summary = self._generate_executive_summary(final_report, user_query)
+        # Paso 4: Compilar reporte completo
+        self._show_progress(4, total_steps, "Compilando reporte completo...")
+        complete_report = self._compile_complete_report(
+            user_query,
+            executive_summary,
+            final_report,
+            analysis_info,
+            analysis_complete
+        )
         
-        # Reporte completo con resumen ejecutivo
-        complete_report = self._create_complete_report(executive_summary, final_report, report_data)
+        # Paso 5: Guardar reporte en archivo markdown
+        self._show_progress(5, total_steps, "Guardando archivo markdown...")
+        file_path = self._save_report_to_file(complete_report, user_query)
+        
+        # Progreso completo
+        self._show_progress(5, total_steps, "¡Reporte completado!", complete=True)
         
         self.log("✅ Reporte final generado exitosamente")
+        if file_path:
+            self.log(f"📁 Reporte guardado en: {file_path}")
         
         return {
             **state,
             "current_agent": self.name,
             "final_report": complete_report,
-            "strategic_context": {
-                "report_generated_at": datetime.now().isoformat(),
-                "sections_count": len(sections),
-                "total_words": len(complete_report.split()),
-                "quality_score": self._assess_report_quality(complete_report)
+            "executive_summary": executive_summary,
+            "report_file_path": file_path,
+            "report_metadata": {
+                "generated_at": datetime.datetime.now().isoformat(),
+                "sections_count": len(curated_content),
+                "word_count": len(complete_report.split()),
+                "analysis_depth": analysis_complete.get('research_depth', 'comprehensive'),
+                "file_path": file_path
             }
         }
     
-    def _prepare_report_data(self, research_results: Dict[str, Any], 
-                           research_context: Dict[str, Any], user_query: str) -> Dict[str, Any]:
-        """Prepara y organiza los datos para el reporte"""
+    def _create_structured_report_from_approved_outline(self, query: str, outline_items: List[str], 
+                                                       curated_sections: List[Dict], synthesis: str) -> str:
+        """
+        Crea el reporte siguiendo exactamente el índice/esquema aprobado por el usuario
+        """
+        self.log(f"📋 Estructurando reporte según esquema aprobado: {len(outline_items)} secciones")
         
-        # Extraer todos los análisis
-        all_analyses = []
-        all_insights = []
-        all_sources = []
+        # Mapear contenido curado con los elementos del esquema aprobado
+        structured_content = ""
         
-        for item_key, content in research_results.items():
-            if isinstance(content, dict):
-                all_analyses.append({
-                    "title": content.get("title", "Sin título"),
-                    "analysis": content.get("analysis", ""),
-                    "insights": content.get("key_insights", [])
-                })
-                all_insights.extend(content.get("key_insights", []))
-                
-                # Extraer fuentes
-                sources = content.get("sources", {})
-                if "wikipedia" in sources:
-                    all_sources.extend(sources["wikipedia"])
-                if "web" in sources:
-                    all_sources.extend(sources["web"])
+        for i, approved_title in enumerate(outline_items, 1):
+            # Buscar el contenido curado correspondiente a este título
+            matching_content = self._find_content_for_approved_title(approved_title, curated_sections)
+            
+            # Agregar sección al reporte
+            structured_content += f"\n\n## {i}. {approved_title}\n\n"
+            
+            if matching_content:
+                # Usar el contenido curado disponible
+                structured_content += matching_content
+                self.log(f"   ✅ Sección {i}: Contenido encontrado y mapeado")
+            else:
+                # Generar contenido básico si no hay match
+                basic_content = self._generate_basic_content_for_title(approved_title, query)
+                structured_content += basic_content
+                self.log(f"   ⚠️ Sección {i}: Generando contenido básico")
         
-        return {
-            "query": user_query,
-            "analyses": all_analyses,
-            "all_insights": all_insights,
-            "sources": all_sources,
-            "synthesis_notes": research_context.get("synthesis_notes", []),
-            "total_items": research_context.get("total_items", 0),
-            "completed_items": research_context.get("completed_items", 0)
-        }
-    
-    def _generate_report_sections(self, report_data: Dict[str, Any]) -> Dict[str, str]:
-        """Genera cada sección del reporte usando AI"""
+        # Crear reporte completo usando el formato del usuario
+        sections_list = "\n".join([f"{i}. {title}" for i, title in enumerate(outline_items, 1)])
         
-        sections = {}
+        report_prompt = f"""
+        Crea un reporte de investigación profesional siguiendo EXACTAMENTE esta estructura aprobada por el usuario:
+
+        ESQUEMA APROBADO:
+        {sections_list}
         
-        # 1. Introducción y Contexto
-        sections["introduction"] = self._generate_introduction(report_data)
+        CONTENIDO DISPONIBLE POR SECCIÓN:
+        {structured_content}
         
-        # 2. Hallazgos Principales
-        sections["main_findings"] = self._generate_main_findings(report_data)
+        SÍNTESIS PARA INTEGRAR:
+        {synthesis}
         
-        # 3. Análisis Detallado
-        sections["detailed_analysis"] = self._generate_detailed_analysis(report_data)
+        INSTRUCCIONES CRÍTICAS:
+        1. RESPETA EXACTAMENTE el orden y títulos del esquema aprobado
+        2. Usa los títulos EXACTOS como aparecen en el esquema
+        3. NO reorganices ni cambies la estructura aprobada
+        4. INCLUYE TODAS LAS 6 SECCIONES COMPLETAS Y DESARROLLADAS
+        5. Integra el contenido disponible en cada sección correspondiente
+        6. Mantén un tono académico pero accesible
+        7. Asegúrate de que cada sección tenga contenido sustancial (300-400 palabras mínimo)
+        8. INCLUYE el índice aprobado al inicio del reporte
+        9. COMPLETA TODAS LAS SECCIONES - NO CORTES EL CONTENIDO
         
-        # 4. Insights y Tendencias
-        sections["insights_trends"] = self._generate_insights_trends(report_data)
+        FORMATO DE RESPUESTA (Markdown):
+        # {query}
         
-        # 5. Conclusiones
-        sections["conclusions"] = self._generate_conclusions(report_data)
+        ## 📋 Índice General
         
-        # 6. Recomendaciones
-        sections["recommendations"] = self._generate_recommendations(report_data)
+        ### Estructura del Reporte
+        1. **Introducción** - Presentación del tema y metodología
+        2. **Contenido Principal** - Análisis detallado por secciones:
+        {chr(10).join([f"   - {i}. {title}" for i, title in enumerate(outline_items, 1)])}
+        3. **Conclusiones** - Síntesis final y hallazgos clave
         
-        return sections
-    
-    def _generate_introduction(self, report_data: Dict[str, Any]) -> str:
-        """Genera la introducción del reporte"""
-        prompt = f"""
-        Escribe una introducción profesional para un reporte de investigación sobre:
+        ### Secciones Complementarias
+        - **Resumen Ejecutivo** - Síntesis para toma de decisiones
+        - **Información del Análisis** - Metodología y proceso
+        - **Arquitectura del Sistema** - Tecnología utilizada
         
-        TEMA: {report_data['query']}
+        ---
         
-        La introducción debe:
-        - Establecer el contexto y propósito de la investigación
-        - Mencionar que se analizaron {report_data['total_items']} aspectos principales
-        - Explicar brevemente la metodología (investigación multi-fuente)
-        - Ser concisa pero informativa (150-200 palabras)
+        ## Introducción
+        [Breve introducción al tema y estructura del reporte - explicando que se analizarán las {len(outline_items)} secciones del índice principal]
         
-        Escribe en tono profesional y académico.
+        {chr(10).join([f"## {i}. {title}" + chr(10) + "[Desarrollar COMPLETAMENTE esta sección con mínimo 300 palabras sustanciales]" + chr(10) for i, title in enumerate(outline_items, 1)])}
+        
+        ## Conclusiones
+        [Síntesis final integrando todos los aspectos del esquema aprobado]
+        
+        IMPORTANTE: 
+        - Mantén EXACTAMENTE los títulos y numeración del esquema aprobado
+        - DESARROLLA COMPLETAMENTE todas las 6 secciones SIN EXCEPCIÓN
+        - NO cortes el contenido a la mitad - termina cada sección completamente
+        - Incluye el índice completo al inicio
+        - Asegúrate de que el reporte tenga todas las secciones numeradas del 1 al 6
         """
         
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=300)
+        try:
+            # Usar modelo de alta calidad para reporte final
+            report = self.openai_client.generate_response(
+                report_prompt, 
+                task_type="final_report",  # Máxima calidad
+                max_tokens=3000  # Aumentado para permitir reportes completos
+            )
+            
+            self.log("✅ Reporte estructurado según esquema aprobado")
+            return report
+            
+        except Exception as e:
+            self.log(f"❌ Error generando reporte estructurado: {e}")
+            return self._generate_fallback_structured_report(query, outline_items, curated_sections)
     
-    def _generate_main_findings(self, report_data: Dict[str, Any]) -> str:
-        """Genera la sección de hallazgos principales"""
+    def _find_content_for_approved_title(self, approved_title: str, curated_sections: List[Dict]) -> str:
+        """Busca el contenido curado que corresponde a un título aprobado"""
+        # Buscar coincidencia exacta primero
+        for section in curated_sections:
+            if section['title'].strip() == approved_title.strip():
+                return section['content']
         
-        insights_text = "\n".join(f"- {insight}" for insight in report_data['all_insights'][:10])
+        # Buscar coincidencia parcial
+        approved_lower = approved_title.lower()
+        for section in curated_sections:
+            section_lower = section['title'].lower()
+            if approved_lower in section_lower or section_lower in approved_lower:
+                return section['content']
         
-        prompt = f"""
-        Basado en los siguientes insights de investigación, crea una sección de "Hallazgos Principales":
-        
-        TEMA: {report_data['query']}
-        
-        INSIGHTS IDENTIFICADOS:
-        {insights_text}
-        
-        SÍNTESIS:
-        {chr(10).join(f"- {note}" for note in report_data['synthesis_notes'])}
-        
-        Organiza los hallazgos en 4-6 puntos principales que:
-        - Destaquen los descubrimientos más importantes
-        - Estén respaldados por evidencia
-        - Sean relevantes para el tema principal
-        - Estén ordenados por importancia
-        
-        Usa formato markdown con subsecciones.
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=600)
+        return None
     
-    def _generate_detailed_analysis(self, report_data: Dict[str, Any]) -> str:
-        """Genera la sección de análisis detallado"""
-        
-        analyses_summary = ""
-        for i, analysis in enumerate(report_data['analyses'], 1):
-            analyses_summary += f"\n**{i}. {analysis['title']}**\n"
-            analyses_summary += f"{analysis['analysis'][:300]}...\n"
-        
-        prompt = f"""
-        Crea una sección de "Análisis Detallado" que sintetice los siguientes análisis:
-        
-        TEMA: {report_data['query']}
-        
-        ANÁLISIS REALIZADOS:
-        {analyses_summary}
-        
-        Esta sección debe:
-        - Profundizar en los aspectos técnicos y conceptuales
-        - Conectar los diferentes análisis realizados
-        - Identificar patrones y relaciones entre elementos
-        - Proporcionar contexto y explicaciones detalladas
-        - Mantener estructura clara con subsecciones
-        
-        Usa formato markdown y mantén tono analítico.
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=800)
+    def _generate_basic_content_for_title(self, title: str, main_query: str) -> str:
+        """Genera contenido básico para un título cuando no hay contenido curado disponible"""
+        try:
+            basic_prompt = f"""
+            Genera un análisis básico sobre: "{title}"
+            
+            CONTEXTO: Este es parte de una investigación sobre "{main_query}"
+            
+            INSTRUCCIONES:
+            1. Proporciona información relevante y precisa sobre el tema
+            2. Mantén un enfoque académico
+            3. Incluye 2-3 párrafos de desarrollo
+            4. Conecta con el tema principal de investigación
+            5. Evita especulaciones, usa información verificable
+            
+            Genera contenido de 200-300 palabras.
+            """
+            
+            content = self.openai_client.generate_response(
+                basic_prompt,
+                task_type="content_generation",
+                max_tokens=400
+            )
+            return content
+            
+        except Exception as e:
+            return f"**{title}**\n\nContenido no disponible para esta sección. Se requiere análisis adicional sobre este aspecto de {main_query}."
     
-    def _generate_insights_trends(self, report_data: Dict[str, Any]) -> str:
-        """Genera la sección de insights y tendencias"""
+    def _generate_fallback_structured_report(self, query: str, outline_items: List[str], curated_sections: List[Dict]) -> str:
+        """Genera reporte de respaldo cuando falla la generación principal"""
+        report = f"# {query}\n\n"
+        report += "## Introducción\n\nEste reporte presenta un análisis del tema solicitado.\n\n"
         
-        prompt = f"""
-        Basado en la investigación sobre "{report_data['query']}", crea una sección de "Insights y Tendencias":
+        for i, title in enumerate(outline_items, 1):
+            report += f"## {i}. {title}\n\n"
+            
+            # Buscar contenido correspondiente
+            matching_content = self._find_content_for_approved_title(title, curated_sections)
+            if matching_content:
+                report += matching_content + "\n\n"
+            else:
+                report += f"Análisis pendiente para: {title}\n\n"
         
-        INSIGHTS CLAVE:
-        {chr(10).join(f"- {insight}" for insight in report_data['all_insights'])}
-        
-        NOTAS DE SÍNTESIS:
-        {chr(10).join(f"- {note}" for note in report_data['synthesis_notes'])}
-        
-        Esta sección debe incluir:
-        - Tendencias emergentes identificadas
-        - Patrones significativos
-        - Implicaciones futuras
-        - Oportunidades y desafíos
-        - Perspectivas de evolución
-        
-        Estructura con subsecciones claras en markdown.
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=600)
-    
-    def _generate_conclusions(self, report_data: Dict[str, Any]) -> str:
-        """Genera las conclusiones del reporte"""
-        
-        prompt = f"""
-        Escribe conclusiones sólidas para el reporte de investigación sobre:
-        
-        TEMA: {report_data['query']}
-        
-        Las conclusiones deben:
-        - Sintetizar los hallazgos más importantes
-        - Responder a las preguntas clave sobre el tema
-        - Proporcionar una perspectiva general informada
-        - Mencionar limitaciones de la investigación
-        - Ser concisas pero comprehensivas
-        
-        Longitud: 200-300 palabras.
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=400)
-    
-    def _generate_recommendations(self, report_data: Dict[str, Any]) -> str:
-        """Genera recomendaciones basadas en la investigación"""
-        
-        prompt = f"""
-        Basado en la investigación sobre "{report_data['query']}", proporciona recomendaciones prácticas:
-        
-        Las recomendaciones deben:
-        - Ser específicas y accionables
-        - Estar basadas en los hallazgos de la investigación
-        - Dirigirse a diferentes audiencias (si aplica)
-        - Incluir próximos pasos sugeridos
-        - Ser realistas e implementables
-        
-        Organiza en 3-5 recomendaciones principales con formato markdown.
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=500)
-    
-    def _generate_executive_summary(self, full_report: str, query: str) -> str:
-        """Genera un resumen ejecutivo del reporte completo"""
-        
-        prompt = f"""
-        Crea un resumen ejecutivo conciso para este reporte de investigación:
-        
-        TEMA: {query}
-        
-        REPORTE COMPLETO:
-        {full_report[:2000]}...
-        
-        El resumen ejecutivo debe:
-        - Capturar los puntos más importantes en 100-150 palabras
-        - Ser autocontenido y legible independientemente
-        - Destacar hallazgos clave y conclusiones principales
-        - Usar lenguaje claro y directo
-        """
-        
-        return self.openai_client.generate_response(prompt, task_type="report", max_tokens=250)
-    
-    def _assemble_final_report(self, sections: Dict[str, str], report_data: Dict[str, Any]) -> str:
-        """Ensambla todas las secciones en un reporte final"""
-        
-        report = f"""# Reporte de Investigación: {report_data['query']}
-
-## Introducción
-{sections['introduction']}
-
-## Hallazgos Principales
-{sections['main_findings']}
-
-## Análisis Detallado
-{sections['detailed_analysis']}
-
-## Insights y Tendencias
-{sections['insights_trends']}
-
-## Conclusiones
-{sections['conclusions']}
-
-## Recomendaciones
-{sections['recommendations']}
-
----
-
-### Metodología
-Esta investigación se basó en análisis multi-fuente incluyendo {len(report_data['sources'])} fuentes académicas y web, con síntesis automatizada de {report_data['total_items']} aspectos principales del tema.
-
-### Fuentes Consultadas
-{self._format_sources(report_data['sources'])}
-"""
-        
+        report += "## Conclusiones\n\nSe requiere análisis adicional para completar la investigación.\n\n"
         return report
     
-    def _create_complete_report(self, executive_summary: str, full_report: str, 
-                              report_data: Dict[str, Any]) -> str:
-        """Crea el reporte completo con resumen ejecutivo"""
+    def _create_structured_report(self, query: str, curated_sections: List[Dict], 
+                                synthesis: str, research_context: Dict) -> str:
+        """
+        Crea el cuerpo principal del reporte estructurado
+        Usa modelo de alta calidad para output pulido
+        """
+        sections_content = "\n\n".join([
+            f"SECCIÓN {section['section_number']}: {section['title']}\n{section['content']}"
+            for section in curated_sections
+        ])
         
-        complete_report = f"""# 📊 REPORTE DE INVESTIGACIÓN COMPLETO
+        sources_count = len(research_context.get('source_summaries', []))
+        
+        report_prompt = f"""
+        Crea un reporte de investigación profesional y bien estructurado sobre: "{query}"
+        
+        CONTENIDO CURADO DISPONIBLE:
+        {sections_content}
+        
+        SÍNTESIS MULTI-FUENTE:
+        {synthesis}
+        
+        FUENTES CONSULTADAS: {sources_count} fuentes verificadas
+        
+        INSTRUCCIONES PARA REPORTE FINAL:
+        1. Usa un tono académico pero accesible
+        2. Estructura el contenido de manera lógica y fluida
+        3. Integra las secciones de manera coherente
+        4. Incluye transiciones suaves entre temas
+        5. Mantén rigor académico y profesionalismo
+        6. Evita repeticiones innecesarias
+        7. Proporciona conclusiones bien fundamentadas
+        
+        FORMATO DE RESPUESTA (Markdown):
+        # {query}
+        
+        ## Introducción
+        [Contexto y relevancia del tema - 2-3 párrafos]
+        
+        ## Desarrollo Principal
+        [Integración fluida del contenido curado organizando las secciones de manera lógica]
+        
+        ## Análisis y Tendencias
+        [Integración de la síntesis multi-fuente con análisis crítico]
+        
+        ## Conclusiones
+        [Síntesis final con hallazgos principales y perspectivas futuras]
+        
+        Genera un reporte completo, profesional y bien estructurado que integre todo el contenido de manera coherente.
+        """
+        
+        try:
+            # Usar modelo de alta calidad para reporte final (task_type="report")
+            report = self.openai_client.generate_response(
+                report_prompt, 
+                task_type="report",  # Usará el modelo más potente
+                max_tokens=1500
+            )
+            return report
+            
+        except Exception as e:
+            self.log(f"❌ Error generando reporte estructurado: {e}")
+            return f"# {query}\n\n[Error en generación de reporte final]"
+    
+    def _create_executive_summary(self, query: str, curated_sections: List[Dict], 
+                                synthesis: str) -> str:
+        """
+        Crea resumen ejecutivo del reporte
+        """
+        key_points = []
+        for section in curated_sections[:3]:  # Top 3 secciones
+            title = section['title']
+            content_preview = section['content'][:200] + "..."
+            key_points.append(f"• {title}: {content_preview}")
+        
+        key_points_text = "\n".join(key_points)
+        
+        summary_prompt = f"""
+        Crea un resumen ejecutivo conciso para una investigación sobre: "{query}"
+        
+        PUNTOS CLAVE IDENTIFICADOS:
+        {key_points_text}
+        
+        SÍNTESIS DISPONIBLE:
+        {synthesis[:300]}...
+        
+        OBJETIVO DEL RESUMEN EJECUTIVO:
+        1. Capturar los hallazgos más importantes en 3-4 párrafos
+        2. Usar lenguaje claro y directo
+        3. Destacar implicaciones prácticas
+        4. Proporcionar valor inmediato al lector
+        
+        FORMATO:
+        ## Resumen Ejecutivo
+        
+        [3-4 párrafos concisos que capturen la esencia de la investigación]
+        
+        ### Hallazgos Clave
+        • [Hallazgo 1]
+        • [Hallazgo 2]
+        • [Hallazgo 3]
+        
+        ### Implicaciones Principales
+        [1-2 párrafos sobre las implicaciones más importantes]
+        
+        Genera un resumen ejecutivo de 200-250 palabras.
+        """
+        
+        try:
+            summary = self.openai_client.generate_response(
+                summary_prompt, 
+                task_type="summary",
+                max_tokens=350
+            )
+            return summary
+            
+        except Exception as e:
+            self.log(f"❌ Error generando resumen ejecutivo: {e}")
+            return "## Resumen Ejecutivo\n\n[Error en generación de resumen ejecutivo]"
+    
+    def _create_analysis_info_section(self, analysis_complete: Dict) -> str:
+        """
+        Crea sección con información del análisis realizado
+        """
+        total_sections = analysis_complete.get('total_sections', 0)
+        research_depth = analysis_complete.get('research_depth', 'básico')
+        analysis_method = analysis_complete.get('analysis_method', 'curación de contenido')
+        
+        analysis_info = f"""## 📊 Información del Análisis
 
-**Tema:** {report_data['query']}  
-**Fecha:** {datetime.now().strftime('%d/%m/%Y %H:%M')}  
-**Análisis completados:** {report_data['completed_items']}/{report_data['total_items']}
+### Especificaciones Técnicas
+- **Desarrollador del Sistema**: Facundo Iskowitz
+- **Método de análisis**: {analysis_method}
+- **Profundidad de investigación**: {research_depth}
+- **Secciones analizadas**: {total_sections}
+- **Arquitectura**: Multi-agente con LangGraph
+
+### Proceso de Curación Inteligente
+Este reporte ha sido generado mediante un proceso de análisis profundo que incluye:
+1. **Validación humana** del esquema de investigación
+2. **Análisis detallado** de cada sección temática
+3. **Síntesis multi-perspectiva** de los hallazgos
+4. **Estructuración académica** del contenido
+5. **Optimización de costos** mediante selección inteligente de modelos
+
+### Garantía de Calidad
+- **Rigor académico**: Estándares científicos aplicados
+- **Múltiples perspectivas**: Análisis integral del tema
+- **Validación humana**: Supervisión en puntos críticos
+- **Trazabilidad**: Proceso documentado y reproducible
+
+### Tecnologías Utilizadas
+- **LangGraph**: Orquestación de agentes inteligentes
+- **OpenAI GPT**: Modelos de lenguaje optimizados
+- **Python**: Lenguaje de programación principal
+- **Markdown**: Formato de salida estructurado"""
+        
+        return analysis_info
+    
+    def _compile_complete_report(self, query: str, executive_summary: str, 
+                               main_report: str, analysis_info: str, 
+                               analysis_complete: Dict) -> str:
+        """
+        Compila el reporte completo con todas las secciones
+        """
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sections_count = analysis_complete.get('total_sections', 0)
+        
+        complete_report = f"""# Reporte de Investigación: {query}
+
+**Autor:** Facundo Iskowitz  
+**Fecha de generación:** {timestamp}  
+**Secciones analizadas:** {sections_count}  
+**Sistema:** Multi-Agente de Investigación Inteligente  
 
 ---
 
-## 🎯 Resumen Ejecutivo
+{main_report}
+
+---
 
 {executive_summary}
 
 ---
 
-{full_report}
+{analysis_info}
 
 ---
 
-## 📈 Métricas del Reporte
-- **Fuentes analizadas:** {len(report_data['sources'])}
-- **Insights extraídos:** {len(report_data['all_insights'])}
-- **Notas de síntesis:** {len(report_data['synthesis_notes'])}
-- **Palabras totales:** ~{len(full_report.split())} palabras
+## Metodología del Sistema
 
-*Reporte generado por el Sistema de Agentes de Investigación*
+Este reporte fue generado mediante un sistema multi-agente desarrollado por **Facundo Iskowitz** que incluye:
+
+### Arquitectura de Agentes
+- **🤖 Supervisor:** Coordinación inteligente del flujo de trabajo
+- **🔍 Investigador:** Generación y estructuración de esquemas de investigación
+- **📚 Curador:** Análisis profundo y síntesis multi-perspectiva
+- **📄 Reportero:** Generación de reportes finales estructurados
+
+### Proceso de Investigación
+1. **Análisis inicial** del tema de investigación
+2. **Generación de esquema** con validación humana
+3. **Curación profunda** de contenido por secciones
+4. **Síntesis multi-perspectiva** de hallazgos
+5. **Generación de reporte** final estructurado
+
+### Características Técnicas
+- **Human-in-the-loop validation** para máxima precisión
+- **Cost optimization** mediante selección inteligente de modelos
+- **Multi-perspective analysis** para visión integral
+- **Structured reporting** con formato académico
+
+---
+
+*Reporte generado por el Sistema Multi-Agente de Investigación*  
+*Desarrollado por **Facundo Iskowitz***  
+*Powered by LangGraph & OpenAI*
 """
         
         return complete_report
     
-    def _format_sources(self, sources: list) -> str:
-        """Formatea la lista de fuentes"""
-        if not sources:
-            return "No se encontraron fuentes específicas."
-        
-        formatted = []
-        for i, source in enumerate(sources[:10], 1):  # Máximo 10 fuentes
-            if isinstance(source, dict):
-                title = source.get('title', 'Sin título')
-                source_type = source.get('source', 'Desconocido')
-                formatted.append(f"{i}. **{title}** - {source_type}")
-        
-        return "\n".join(formatted) if formatted else "Fuentes procesadas automáticamente."
+    def _save_report_to_file(self, report_content: str, user_query: str) -> str:
+        """
+        Guarda el reporte en un archivo markdown
+        Cumple con: 'Generates final report in predefined format (markdown recommended)'
+        """
+        try:
+            # Crear nombre de archivo limpio
+            safe_filename = self._create_safe_filename(user_query)
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+            filename = f"reporte_{safe_filename}_{timestamp}.md"
+            
+            # Guardar en directorio actual, crear subdirectorio solo si no existe
+            reports_dir = "reportes"
+            try:
+                if not os.path.exists(reports_dir):
+                    os.makedirs(reports_dir)
+                    self.log(f"📁 Directorio '{reports_dir}' creado automáticamente")
+                
+                # Ruta completa del archivo
+                file_path = os.path.join(reports_dir, filename)
+            except Exception:
+                # Si no puede crear la carpeta, guarda en directorio actual
+                self.log("⚠️ No se pudo crear carpeta 'reportes', guardando en directorio actual")
+                file_path = filename
+            
+            # Guardar el reporte
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            self.log(f"💾 Archivo guardado exitosamente: {file_path}")
+            return file_path
+            
+        except Exception as e:
+            self.log(f"❌ Error guardando archivo: {e}")
+            return None
     
-    def _assess_report_quality(self, report: str) -> float:
-        """Evalúa la calidad del reporte generado"""
+    def _create_safe_filename(self, query: str) -> str:
+        """Crea un nombre de archivo seguro a partir del query del usuario"""
+        # Limpiar caracteres especiales
+        safe_name = re.sub(r'[^\w\s-]', '', query.lower())
+        # Reemplazar espacios con guiones bajos
+        safe_name = re.sub(r'[-\s]+', '_', safe_name)
+        # Limitar longitud
+        safe_name = safe_name[:50]
+        # Remover guiones bajos al inicio/final
+        safe_name = safe_name.strip('_')
         
-        # Métricas básicas de calidad
-        word_count = len(report.split())
-        section_count = report.count('##')
-        has_sources = 'Fuentes' in report
-        has_conclusions = 'Conclusiones' in report
-        has_recommendations = 'Recomendaciones' in report
+        return safe_name if safe_name else "investigacion"
+    
+    def _show_progress(self, current: int, total: int, message: str, complete: bool = False):
+        """Muestra barra de progreso en tiempo real"""
+        if complete:
+            percentage = 100
+            progress_bar = "█" * 30
+        else:
+            percentage = int((current / total) * 100)
+            filled = int((current / total) * 30)
+            progress_bar = "█" * filled + "░" * (30 - filled)
         
-        # Cálculo de puntuación (0-1)
-        quality_score = 0.0
+        status_icon = "✅" if complete else "📊"
+        print(f"\r{status_icon} Generando reporte: [{progress_bar}] {percentage}% - {message}", end="", flush=True)
         
-        # Longitud apropiada (0.3 puntos)
-        if 800 <= word_count <= 2000:
-            quality_score += 0.3
-        elif 500 <= word_count <= 2500:
-            quality_score += 0.2
-        
-        # Estructura completa (0.4 puntos)
-        if section_count >= 5:
-            quality_score += 0.2
-        if has_sources:
-            quality_score += 0.1
-        if has_conclusions:
-            quality_score += 0.05
-        if has_recommendations:
-            quality_score += 0.05
-        
-        # Contenido coherente (0.3 puntos)
-        if 'Hallazgos' in report:
-            quality_score += 0.1
-        if 'Análisis' in report:
-            quality_score += 0.1
-        if 'Resumen Ejecutivo' in report:
-            quality_score += 0.1
-        
-        return min(quality_score, 1.0)  # Máximo 1.0
+        if complete:
+            print()  # Nueva línea al completar

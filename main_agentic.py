@@ -124,11 +124,47 @@ def demo_mode():
     except Exception as e:
         print(f"❌ Error en demo: {e}")
 
+def auto_demo_mode():
+    """Modo demo completamente automático que simula aprobaciones"""
+    print("🤖 MODO DEMO AUTOMÁTICO - Sin intervención humana")
+    
+    # Verificar configuración
+    if not Settings.validate_config():
+        print("❌ Error: Configuración incompleta para demo automático")
+        return
+    
+    # Tema de demo
+    demo_topic = "Inteligencia Artificial aplicada a medicina"
+    
+    try:
+        workflow = AgenticResearchWorkflow()
+        print(f"🎯 Ejecutando demo automático con tema: {demo_topic}")
+        
+        # Simular aprobaciones automáticas
+        workflow.set_auto_approve_mode(True)
+        
+        # Ejecutar con tema predefinido
+        result = workflow.run(user_query=demo_topic)
+        
+        if result.get('final_report'):
+            print("\n🎉 Demo automático completado exitosamente")
+            return result
+        else:
+            print("\n❌ Demo automático falló")
+            
+    except Exception as e:
+        print(f"❌ Error en demo automático: {e}")
+
 if __name__ == "__main__":
     import sys
     
     # Verificar si se quiere ejecutar en modo demo
-    if len(sys.argv) > 1 and sys.argv[1] == "demo":
-        demo_mode()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "demo":
+            demo_mode()
+        elif sys.argv[1] == "auto":
+            auto_demo_mode()
+        else:
+            main()
     else:
         main()

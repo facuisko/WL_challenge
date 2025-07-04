@@ -11,6 +11,9 @@ class Settings:
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL: str = "gpt-4"
     
+    # Tavily Web Search
+    TAVILY_API_KEY: Optional[str] = os.getenv("TAVILY_API_KEY")
+    
     # Configuración de agentes
     MAX_RETRIES: int = 3
     TIMEOUT: int = 30

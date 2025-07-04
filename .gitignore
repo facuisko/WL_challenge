@@ -1,8 +1,4 @@
-# Para el push actual (si está en proceso)
-Ctrl+C
-
-# Crear .gitignore
-echo "# Virtual Environment
+# Virtual Environment
 langgraph_env/
 venv/
 env/
@@ -40,4 +36,9 @@ Thumbs.db
 
 # API Keys
 .env.local
-config.ini" > .gitignore
+config.ini
+
+# Markdown files (except README.md and CLAUDE.md)
+*.md
+!README.md
+!CLAUDE.md

@@ -1,61 +1,108 @@
 """
-Agente supervisor que coordina el workflow y maneja interacción con usuario
+Agente supervisor que coordina el workflow completo multi-agente
 """
 import re
 from research_agent.agents.base_agent import BaseAgent
-from research_agent.models.state import ResearchState
+from research_agent.models.agentic_state import AgenticResearchState
 
 class SupervisorAgent(BaseAgent):
-    """Supervisor que coordina el flujo de trabajo y maneja validación de índices"""
+    """Supervisor que coordina el flujo de trabajo completo con múltiples agentes"""
     
     def __init__(self):
         super().__init__("Supervisor")
     
-    def execute(self, state: ResearchState) -> ResearchState:
-        """Decide el próximo paso en el workflow"""
+    def execute(self, state: AgenticResearchState) -> AgenticResearchState:
+        """Decide el próximo paso en el workflow completo"""
         step = state.get('step_count', 0)
+        current_stage = self._determine_current_stage(state)
         
-        # Si no hay user_query, preguntar al usuario qué tema quiere investigar
+        self.log(f"📋 Evaluando estado - Paso {step}, Etapa: {current_stage}")
+        
+        # Etapa 1: Solicitar tema de investigación
         if not state.get('user_query'):
             return self._ask_for_research_topic(state)
         
-        if step == 0:
-            # Primer paso: solicitar índice al investigador
+        # Etapa 2: Generar esquema inicial
+        if current_stage == "INITIAL":
             decision = "GENERATE_OUTLINE"
-            self.log("Solicitando índice inicial al investigador")
-            return {
-                **state,
-                "current_agent": self.name,
-                "next_action": decision,
-                "step_count": step + 1
-            }
+            reasoning = "Iniciando proceso con generación de esquema"
+            self.log("🎯 Solicitando esquema inicial al investigador")
+            return self._update_state_with_decision(state, decision, reasoning, step + 1)
         
-        # Si hay un esquema propuesto y NO está aprobado, seguir interactuando
-        if state.get('proposed_outline') and not state.get('outline_approved'):
+        # Etapa 3: Validación humana del esquema
+        if current_stage == "OUTLINE_PENDING":
             return self._interact_with_user(state)
         
-        # Si el esquema está aprobado, terminar
-        if state.get('outline_approved'):
-            decision = "FINISH"
-            self.log("✅ Esquema confirmado por usuario - Proceso completado")
-            return {
-                **state,
-                "current_agent": self.name,
-                "next_action": decision,
-                "step_count": step + 1
-            }
+        # Etapa 4: Curación profunda del contenido aprobado
+        if current_stage == "OUTLINE_APPROVED":
+            decision = "CURATE_CONTENT"
+            reasoning = "Esquema aprobado, iniciando curación profunda"
+            self.log("🔍 Enviando contenido aprobado al curador")
+            return self._update_state_with_decision(state, decision, reasoning, step + 1)
         
-        # Fallback
+        # Etapa 5: Generación del reporte final
+        if current_stage == "CONTENT_CURATED":
+            decision = "GENERATE_REPORT"
+            reasoning = "Contenido curado, generando reporte final"
+            self.log("📄 Enviando al reportero para reporte final")
+            return self._update_state_with_decision(state, decision, reasoning, step + 1)
+        
+        # Etapa 6: Finalización
+        if current_stage == "REPORT_READY":
+            decision = "FINISH"
+            reasoning = "Proceso completado exitosamente"
+            self.log("✅ Proceso de investigación completado")
+            return self._update_state_with_decision(state, decision, reasoning, step + 1)
+        
+        # Fallback - algo salió mal
         decision = "FINISH"
-        self.log("Finalizando proceso")
+        reasoning = "Estado no reconocido, finalizando proceso"
+        self.log(f"⚠️ Estado no reconocido: {current_stage}, finalizando")
+        return self._update_state_with_decision(state, decision, reasoning, step + 1)
+    
+    def _determine_current_stage(self, state: AgenticResearchState) -> str:
+        """Determina la etapa actual del workflow"""
+        
+        # Si hay reporte final, proceso completado
+        if state.get('final_report'):
+            return "REPORT_READY"
+        
+        # Si hay análisis completado, listo para reporte
+        if state.get('analysis_complete'):
+            return "CONTENT_CURATED"
+        
+        # Si el esquema está aprobado, listo para curación
+        if state.get('outline_approved'):
+            return "OUTLINE_APPROVED"
+        
+        # Si hay esquema propuesto pero no aprobado
+        if state.get('proposed_outline') and not state.get('outline_approved'):
+            return "OUTLINE_PENDING"
+        
+        # Estado inicial
+        return "INITIAL"
+    
+    def _update_state_with_decision(self, state: AgenticResearchState, decision: str, 
+                                   reasoning: str, new_step: int) -> AgenticResearchState:
+        """Actualiza el estado con una nueva decisión"""
         return {
             **state,
             "current_agent": self.name,
             "next_action": decision,
-            "step_count": step + 1
+            "supervisor_reasoning": reasoning,
+            "step_count": new_step,
+            "agent_decisions": {
+                **state.get("agent_decisions", {}),
+                f"step_{new_step}": {
+                    "agent": self.name,
+                    "decision": decision,
+                    "reasoning": reasoning,
+                    "timestamp": f"step_{new_step}"
+                }
+            }
         }
     
-    def _ask_for_research_topic(self, state: ResearchState) -> ResearchState:
+    def _ask_for_research_topic(self, state: AgenticResearchState) -> AgenticResearchState:
         """Pregunta al usuario qué tema quiere investigar"""
         print(f"\n{'='*60}")
         print("🤝 SUPERVISOR: Bienvenido al Sistema de Investigación")
@@ -80,10 +127,16 @@ class SupervisorAgent(BaseAgent):
             **state,
             "user_query": user_topic,
             "current_agent": self.name,
-            "step_count": 0  # Reiniciar contador para el nuevo tema
+            "step_count": 0,  # Reiniciar contador para el nuevo tema
+            "current_research_topic": user_topic,
+            "research_context": {},
+            "agent_decisions": {},
+            "autonomous_actions": [],
+            "quality_assessments": {},
+            "inter_agent_messages": []
         }
     
-    def _interact_with_user(self, state: ResearchState) -> ResearchState:
+    def _interact_with_user(self, state: AgenticResearchState) -> AgenticResearchState:
         """Supervisor maneja interacción simplificada con usuario"""
         outline = state['proposed_outline']
         
@@ -92,8 +145,12 @@ class SupervisorAgent(BaseAgent):
         print(f"{'='*60}")
         print("\n📋 ESQUEMA PROPUESTO:")
         
-        # Mostrar elementos numerados
-        outline_items = self._parse_outline_to_items(outline)
+        # Usar outline_items del estado si está disponible, sino parsear
+        if 'outline_items' in state and state['outline_items']:
+            outline_items = state['outline_items']
+        else:
+            outline_items = self._parse_outline_to_items(outline)
+        
         for i, item in enumerate(outline_items, 1):
             print(f"{i}. {item}")
         
@@ -105,13 +162,19 @@ class SupervisorAgent(BaseAgent):
         print("  • 'change 1 to \"nuevo título\"' - Cambiar título de elemento")
         print("  • 'add \"nuevo elemento\"' - Agregar nuevo elemento")
         print("  • 'reject' - Rechazar todo y regenerar")
+        print("  • 'reject 2, add \"new item\"' - Comando compuesto")
+        print("  • 'modify 1 to \"new title\"' - Alias para change")
         
         user_input = input("\n👤 Tu comando: ").strip()
         
         return self._process_user_command(user_input, state, outline_items)
     
-    def _process_user_command(self, command: str, state: ResearchState, outline_items: list) -> ResearchState:
-        """Procesa comandos del usuario"""
+    def _process_user_command(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
+        """Procesa comandos del usuario, incluyendo comandos compuestos"""
+        # Primero verificar si es un comando compuesto (contiene comas)
+        if ',' in command and not command.lower().startswith('approve ') and not command.lower().startswith('remove '):
+            return self._handle_compound_command(command, state, outline_items)
+        
         command_lower = command.lower()
         
         if command_lower == 'approve':
@@ -132,8 +195,8 @@ class SupervisorAgent(BaseAgent):
             # Eliminar elementos específicos
             return self._handle_remove_elements(command, state, outline_items)
         
-        elif command_lower.startswith('change '):
-            # Cambiar título de elemento
+        elif command_lower.startswith('change ') or command_lower.startswith('modify '):
+            # Cambiar título de elemento (change o modify)
             return self._handle_change_title(command, state, outline_items)
         
         elif command_lower.startswith('add '):
@@ -174,7 +237,7 @@ class SupervisorAgent(BaseAgent):
         # Limitar a máximo 6 elementos
         return items[:6]
     
-    def _handle_selective_approval(self, command: str, state: ResearchState, outline_items: list) -> ResearchState:
+    def _handle_selective_approval(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
         """Aprobar solo elementos específicos"""
         try:
             numbers_str = command.replace('approve', '').strip()
@@ -201,7 +264,7 @@ class SupervisorAgent(BaseAgent):
             print(f"❌ Error en formato: {e}")
             return self._interact_with_user(state)
     
-    def _handle_remove_elements(self, command: str, state: ResearchState, outline_items: list) -> ResearchState:
+    def _handle_remove_elements(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
         """Eliminar elementos específicos"""
         try:
             numbers_str = command.replace('remove', '').strip()
@@ -228,13 +291,18 @@ class SupervisorAgent(BaseAgent):
             print(f"❌ Error en formato: {e}")
             return self._interact_with_user(state)
     
-    def _handle_change_title(self, command: str, state: ResearchState, outline_items: list) -> ResearchState:
-        """Cambiar título de elemento específico"""
+    def _handle_change_title(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
+        """Cambiar título de elemento específico (soporta 'change' y 'modify')"""
         try:
-            # Parsear: change 1 to "nuevo título"
-            match = re.search(r'change\s+(\d+)\s+to\s+["\'](.+)["\']', command)
+            # Parsear: change/modify 1 to "nuevo título" o change/modify 1 to 'nuevo título'
+            # Primero intentar con comillas dobles
+            match = re.search(r'(?:change|modify)\s+(\d+)\s+to\s+"([^"]+)"', command)
             if not match:
-                match = re.search(r'change\s+(\d+)\s+to\s+(.+)', command)
+                # Intentar con comillas simples
+                match = re.search(r"(?:change|modify)\s+(\d+)\s+to\s+'([^']+)'", command)
+            if not match:
+                # Sin comillas, tomar todo después de "to "
+                match = re.search(r'(?:change|modify)\s+(\d+)\s+to\s+(.+)', command)
             
             if not match:
                 raise ValueError("Formato incorrecto")
@@ -266,18 +334,26 @@ class SupervisorAgent(BaseAgent):
                 
         except (ValueError, AttributeError) as e:
             print(f"❌ Error en formato del comando: {e}")
-            print("Formato correcto: 'change 1 to \"nuevo título\"'")
+            print("Formato correcto: 'change 1 to \"nuevo título\"' o 'change 1 to nuevo título'")
             return self._interact_with_user(state)
     
-    def _handle_add_element(self, command: str, state: ResearchState, outline_items: list) -> ResearchState:
+    def _handle_add_element(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
         """Agregar nuevo elemento"""
         try:
-            # Parsear: add "nuevo elemento"
-            match = re.search(r'add\s+["\'](.+)["\']', command)
+            # Parsear: add "nuevo elemento" o add 'nuevo elemento'
+            # Primero intentar con comillas dobles
+            match = re.search(r'add\s+"([^"]+)"', command)
             if not match:
+                # Intentar con comillas simples
+                match = re.search(r"add\s+'([^']+)'", command)
+            if not match:
+                # Sin comillas, tomar todo después de "add "
                 match = re.search(r'add\s+(.+)', command)
             
-            new_element = match.group(1).strip() if match else "Nuevo elemento"
+            if match:
+                new_element = match.group(1).strip()
+            else:
+                new_element = "Nuevo elemento"
             
             new_items = outline_items.copy()
             new_items.append(new_element)
@@ -296,8 +372,8 @@ class SupervisorAgent(BaseAgent):
                 "outline_items": new_items
             }
             
-        except AttributeError as e:
-            print(f"❌ Error en formato: {e}")
+        except Exception as e:
+            print(f"❌ Error procesando comando add: {e}")
             return self._interact_with_user(state)
     
     def _create_outline_from_items(self, items: list) -> str:
@@ -305,4 +381,98 @@ class SupervisorAgent(BaseAgent):
         outline = "## ESQUEMA DE INVESTIGACIÓN\n\n"
         for i, item in enumerate(items, 1):
             outline += f"### {i}. {item}\n\n"
-        return outline 
+        return outline
+    
+    def _handle_compound_command(self, command: str, state: AgenticResearchState, outline_items: list) -> AgenticResearchState:
+        """
+        Maneja comandos compuestos como 'reject 2, add "new item"'
+        Ejemplos del challenge:
+        - "reject 2, add 'AI safety concerns'"
+        - "modify 1 to 'AI ethical frameworks'"
+        """
+        self.log(f"🔄 Procesando comando compuesto: {command}")
+        
+        # Dividir por comas y procesar cada parte
+        parts = [part.strip() for part in command.split(',')]
+        current_items = outline_items.copy()
+        current_state = state
+        
+        for i, part in enumerate(parts):
+            self.log(f"   📋 Ejecutando parte {i+1}: '{part}'")
+            
+            # Crear estado temporal para esta parte del comando
+            temp_state = {
+                **current_state,
+                "outline_items": current_items
+            }
+            
+            # Procesar esta parte del comando
+            if part.lower().startswith('reject '):
+                # Extract number and remove that item
+                try:
+                    reject_match = re.search(r'reject\s+(\d+)', part)
+                    if reject_match:
+                        item_num = int(reject_match.group(1)) - 1
+                        if 0 <= item_num < len(current_items):
+                            removed_item = current_items.pop(item_num)
+                            self.log(f"   🗑️ Eliminado elemento {item_num + 1}: '{removed_item}'")
+                        else:
+                            print(f"   ❌ Número de elemento inválido: {item_num + 1}")
+                except (ValueError, IndexError):
+                    print(f"   ❌ Error procesando 'reject' en: {part}")
+            
+            elif part.lower().startswith('add '):
+                # Agregar elemento
+                try:
+                    # Usar el mismo parsing que el método individual
+                    match = re.search(r'add\s+"([^"]+)"', part)
+                    if not match:
+                        match = re.search(r"add\s+'([^']+)'", part)
+                    if not match:
+                        match = re.search(r'add\s+(.+)', part)
+                    
+                    if match:
+                        new_element = match.group(1).strip()
+                        current_items.append(new_element)
+                        self.log(f"   ➕ Agregado: '{new_element}'")
+                except Exception as e:
+                    print(f"   ❌ Error procesando 'add' en: {part}")
+            
+            elif part.lower().startswith('modify ') or part.lower().startswith('change '):
+                # Modificar elemento
+                try:
+                    # Usar el mismo parsing que el método individual
+                    match = re.search(r'(?:modify|change)\s+(\d+)\s+to\s+"([^"]+)"', part)
+                    if not match:
+                        match = re.search(r"(?:modify|change)\s+(\d+)\s+to\s+'([^']+)'", part)
+                    if not match:
+                        match = re.search(r'(?:modify|change)\s+(\d+)\s+to\s+(.+)', part)
+                    
+                    if match:
+                        item_num = int(match.group(1)) - 1
+                        new_title = match.group(2).strip()
+                        if 0 <= item_num < len(current_items):
+                            old_title = current_items[item_num]
+                            current_items[item_num] = new_title
+                            self.log(f"   🔄 Cambiado elemento {item_num + 1}: '{old_title}' → '{new_title}'")
+                        else:
+                            print(f"   ❌ Número de elemento inválido: {item_num + 1}")
+                except (ValueError, IndexError):
+                    print(f"   ❌ Error procesando 'modify/change' en: {part}")
+            
+            else:
+                print(f"   ⚠️ Comando no reconocido en parte: '{part}'")
+        
+        # Actualizar el esquema con todos los cambios aplicados
+        new_outline = self._create_outline_from_items(current_items)
+        
+        self.log(f"✅ Comando compuesto completado. {len(current_items)} elementos finales")
+        
+        return {
+            **state,
+            "proposed_outline": new_outline,
+            "outline_approved": False,
+            "next_action": "",  # Quedarse en supervisor
+            "current_agent": self.name,
+            "outline_items": current_items
+        } 

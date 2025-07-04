@@ -24,4 +24,10 @@ class ResearchState(TypedDict):
     
     # Metadatos
     step_count: int
-    conversation_history: List[Dict[str, str]] 
+    conversation_history: List[Dict[str, str]]
+
+# Importar el nuevo estado agéntico
+from .agentic_state import AgenticResearchState
+
+# Mantener compatibilidad con el estado anterior
+__all__ = ['ResearchState', 'AgenticResearchState'] 

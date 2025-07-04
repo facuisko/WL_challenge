@@ -2,8 +2,9 @@
 Clase base para todos los agentes
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, Union
 from research_agent.models.state import ResearchState
+from research_agent.models.agentic_state import AgenticResearchState
 from research_agent.config.settings import Settings
 
 class BaseAgent(ABC):
@@ -14,7 +15,7 @@ class BaseAgent(ABC):
         self.settings = Settings()
     
     @abstractmethod
-    def execute(self, state: ResearchState) -> ResearchState:
+    def execute(self, state: Union[ResearchState, AgenticResearchState]) -> Union[ResearchState, AgenticResearchState]:
         """Ejecuta la lógica principal del agente"""
         pass
     

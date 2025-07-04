@@ -1,4 +1,6 @@
-langgraph==0.5.1
-openai==1.93.0
-requests==2.32.4
-beautifulsoup4==4.13.4
+langgraph>=0.0.69
+openai>=1.0.0
+requests>=2.32.4
+beautifulsoup4>=4.13.4
+wikipedia>=1.4.0
+tavily-python>=0.3.0
